@@ -1,0 +1,13 @@
+version: '3.9'
+
+services:
+  cortex-id:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cortex-id
+    image: cortex-id:latest   
+    volumes:
+      - ~/.cortex:/root/.cortex
+    restart: "no"
+    tty: true
