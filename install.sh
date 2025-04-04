@@ -20,10 +20,10 @@ echo "==> Initialisation du nœud Cortex..."
 
 # Génère l'identité uniquement si absente
 if [ ! -f "$IDENTITY_FILE" ]; then
-    echo "==> Génération d'une identité (rebuild sans cache)..."
-    
-    # Rebuild sans cache pour s'assurer que le binaire est à jour
-    docker compose build --no-cache cortex-id
+    echo "==> Génération d'une identité (build sans cache explicite)..."
+
+    # Build manuel (sans --no-cache pour compatibilité)
+    docker compose build cortex-id
 
     # Exécute le conteneur avec le volume monté
     docker compose run --rm \
@@ -62,4 +62,4 @@ EOF
 echo "==> Lancement du node Cortex via docker-compose"
 docker compose up -d
 
-echo "Installation terminée. Le nœud est prêt."
+echo "✅ Installation terminée. Le nœud est prêt."
