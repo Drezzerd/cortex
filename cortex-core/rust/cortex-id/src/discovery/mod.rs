@@ -5,7 +5,6 @@ use libp2p::{
     },
     identity::Keypair,
     mdns::{tokio::Behaviour as Mdns, Event as MdnsEvent},
-    noise,
     quic::{tokio::Transport as QuicTransport, Config as QuicConfig},
     swarm::{NetworkBehaviour, Swarm, SwarmEvent, Config as SwarmConfig},
     PeerId, Transport,
@@ -51,10 +50,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let transport = transport.map(|(peer_id, conn), _| {
         // Utiliser l'API correcte pour convertir une connexion QuicTransport en StreamMuxerBox
         use libp2p::core::muxing::StreamMuxerBox;
-        use libp2p::core::upgrade::Version;
-        use std::time::Duration;
-        
-        (peer_id, StreamMuxerBox::new(conn, Version::V1))
+
+        (peer_id, StreamMuxerBox::new(conn))
     }).boxed();
 
     // Configuration de gossipsub
@@ -67,8 +64,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let mdns = Mdns::new(Default::default(), peer_id).expect("Failed to create mDNS");
     let behaviour = MeshBehaviour { gossipsub, mdns };
 
-    // Créer une config SwarmConfig explicitemente 
-    let config = SwarmConfig::new();
+    // Correction: utiliser with_tokio_executor() au lieu de new()
+    let config = SwarmConfig::with_tokio_executor();
     
     // Création du swarm avec la config explicite
     let mut swarm = Swarm::new(transport, behaviour, peer_id, config);
