@@ -1,4 +1,3 @@
-
 // ----- identity/mod.rs -----
 use std::path::PathBuf;
 use std::fs;
@@ -17,22 +16,23 @@ pub fn load_or_generate_identity() -> Result<Keypair> {
         let content = fs::read_to_string(&path)?;
         let bytes = STANDARD.decode(content.trim())?;
         
-        // Utilisation correcte de l'API ed25519
-        let ed25519_keypair = libp2p::identity::ed25519::Keypair::decode(&bytes)
+        // Utiliser try_from_bytes au lieu de decode
+        let ed25519_keypair = ed25519::Keypair::try_from_bytes(&mut bytes.clone())
             .map_err(|e| anyhow::anyhow!("Failed to decode keypair: {:?}", e))?;
             
-        return Ok(Keypair::Ed25519(ed25519_keypair));
+        // Utiliser la conversion from() au lieu de Ed25519()
+        return Ok(Keypair::from(ed25519_keypair));
     }
 
     // Génération d'une nouvelle clé
-    let ed25519_keypair = libp2p::identity::ed25519::Keypair::generate();
+    let ed25519_keypair = ed25519::Keypair::generate();
     
-    // Encodage de la clé
-    let encoded = STANDARD.encode(ed25519_keypair.encode());
+    // Sauvegarde de la clé en utilisant to_bytes()
+    let encoded = STANDARD.encode(ed25519_keypair.to_bytes());
     
-    // Sauvegarde de la clé
     fs::create_dir_all(path.parent().unwrap())?;
     fs::write(&path, encoded)?;
 
-    Ok(Keypair::Ed25519(ed25519_keypair))
+    // Utiliser from() plutôt que Ed25519()
+    Ok(Keypair::from(ed25519_keypair))
 }
