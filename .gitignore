@@ -1,0 +1,51 @@
+# === Rust / Cargo ===
+target/
+**/*.rs.bk
+
+# Ignore les fichiers de log ou trace (souvent générés par des outils de debug)
+*.log
+*.trace
+
+# === IDEs / Éditeurs ===
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains (CLion, IntelliJ, etc.)
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*.swn
+
+# Emacs
+*~
+\#*\#
+
+# === OS spécifiques ===
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# === Tests / Bench / Coverage ===
+/coverage/
+*.profraw
+*.profdata
+
+# === Outils éventuels ===
+/dist/

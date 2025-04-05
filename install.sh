@@ -22,11 +22,18 @@ echo "==> Initialisation du nœud Cortex..."
 if [ ! -f "$IDENTITY_FILE" ]; then
     echo "==> Génération d'une identité (build sans cache explicite)..."
 
-    # Build manuel (sans --no-cache pour compatibilité)
-    docker compose build cortex-id
+    # Positionne dans le bon dossier si besoin
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    # Build avec le bon contexte (où le Dockerfile peut accéder aux bons chemins)
+    docker compose \
+      -f "$SCRIPT_DIR/cortex-core/docker/docker-compose.yml" \
+      build cortex-id
 
     # Exécute le conteneur avec le volume monté
-    docker compose run --rm \
+    docker compose \
+      -f "$SCRIPT_DIR/cortex-core/docker/docker-compose.yml" \
+      run --rm \
       -v "$CORTEX_DIR:/root/.cortex" \
       cortex-id
 else
@@ -60,6 +67,6 @@ mesh:
 EOF
 
 echo "==> Lancement du node Cortex via docker-compose"
-docker compose up -d
+docker compose -f "$SCRIPT_DIR/cortex-core/docker/docker-compose.yml" up -d
 
 echo "✅ Installation terminée. Le nœud est prêt."

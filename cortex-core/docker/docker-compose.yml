@@ -3,8 +3,8 @@ version: '3.9'
 services:
   cortex-id:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: cortex-core/docker/Dockerfile
     container_name: cortex-id
     image: cortex-id:latest   
     volumes:
