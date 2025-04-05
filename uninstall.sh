@@ -15,7 +15,6 @@ fi
 echo "Arrêt et suppression des conteneurs Docker"
 docker compose down --volumes --remove-orphans || true
 
-# Vérifie si une image "cortex-id:latest" existe explicitement
 IMAGE_NAME="cortex-id:latest"
 IMAGE_EXISTS=$(docker images -q "$IMAGE_NAME")
 
@@ -25,5 +24,8 @@ if [ -n "$IMAGE_EXISTS" ]; then
 else
     echo "Aucune image nommée $IMAGE_NAME à supprimer."
 fi
+
+echo "Suppression des images <none> non utilisées..."
+docker image prune -f
 
 echo "Désinstallation terminée."
