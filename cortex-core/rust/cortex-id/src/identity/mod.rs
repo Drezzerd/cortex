@@ -1,3 +1,5 @@
+
+// ----- identity/mod.rs -----
 use std::path::PathBuf;
 use std::fs;
 
@@ -5,14 +7,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use dirs;
 use libp2p::identity::{Keypair, ed25519};
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityInfo {
-    pub peer_id: String,
-    pub public_key: String,
-}
 
 pub fn load_or_generate_identity() -> Result<Keypair> {
     let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -21,14 +16,23 @@ pub fn load_or_generate_identity() -> Result<Keypair> {
     if path.exists() {
         let content = fs::read_to_string(&path)?;
         let bytes = STANDARD.decode(content.trim())?;
-        let ed25519_keypair = ed25519::Keypair::try_from_bytes(&mut bytes.clone())?;
-        return Ok(Keypair::from(ed25519_keypair));
+        
+        // Utilisation correcte de l'API ed25519
+        let ed25519_keypair = libp2p::identity::ed25519::Keypair::decode(&bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to decode keypair: {:?}", e))?;
+            
+        return Ok(Keypair::Ed25519(ed25519_keypair));
     }
 
-    let ed25519_keypair = ed25519::Keypair::generate();
+    // Génération d'une nouvelle clé
+    let ed25519_keypair = libp2p::identity::ed25519::Keypair::generate();
+    
+    // Encodage de la clé
     let encoded = STANDARD.encode(ed25519_keypair.encode());
+    
+    // Sauvegarde de la clé
     fs::create_dir_all(path.parent().unwrap())?;
     fs::write(&path, encoded)?;
 
-    Ok(Keypair::from(ed25519_keypair))
+    Ok(Keypair::Ed25519(ed25519_keypair))
 }
