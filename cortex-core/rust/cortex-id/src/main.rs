@@ -15,6 +15,13 @@ pub struct IdentityInfo {
     pub public_key: String,
 }
 
+fn main() -> anyhow::Result<()> {
+    let identity = generate_identity()?;
+    save_identity_file(&identity)?;
+    println!("Identité générée : {}", identity.peer_id);
+    Ok(())
+}
+
 pub fn load_or_generate_identity() -> Result<Keypair> {
     let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push(".cortex/identity.key");
@@ -27,7 +34,7 @@ pub fn load_or_generate_identity() -> Result<Keypair> {
     }
 
     let ed25519_keypair = ed25519::Keypair::generate();
-    let encoded = STANDARD.encode(ed25519_keypair.encode());
+    let encoded = STANDARD.encode(ed25519_keypair.to_bytes());
     fs::create_dir_all(path.parent().unwrap())?;
     fs::write(&path, encoded)?;
 
@@ -37,7 +44,8 @@ pub fn load_or_generate_identity() -> Result<Keypair> {
 pub fn generate_identity() -> Result<IdentityInfo> {
     let keypair = load_or_generate_identity()?;
     let peer_id = PeerId::from(keypair.public());
-    let public_key = STANDARD.encode(keypair.public().encode());
+    let public_key_bytes: &[u8] = keypair.public().as_ref();
+    let public_key = STANDARD.encode(public_key_bytes);
 
     Ok(IdentityInfo {
         peer_id: peer_id.to_string(),

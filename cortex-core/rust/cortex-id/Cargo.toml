@@ -23,5 +23,9 @@ name = "cortex_id"
 path = "src/lib.rs"
 
 [[bin]]
+name = "cortex-id"
+path = "src/main.rs"
+
+[[bin]]
 name = "cortex-node"
 path = "src/bin/cortex-node.rs"
