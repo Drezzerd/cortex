@@ -10,7 +10,7 @@ use libp2p::{
 };
 
 use tokio_stream::StreamExt;
-use tokio::time::{sleep, Duration};
+use tokio::time::{timeout, sleep, Duration};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -97,6 +97,35 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     });
 
+    // Délai de patience avant de vérifier la présence de pairs
+    let discovery_timeout = Duration::from_secs(10);
+    let mut found_peer = false;
+
+    let discovery_result = timeout(discovery_timeout, async {
+        println!("⏳ En attente de découverte de pairs pendant {discovery_timeout:?}...");
+        while let Some(event) = swarm.next().await {
+            println!("📡 Event reçu : {:?}", event);
+            match event {
+                SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
+                    for (peer_id, addr) in peers {
+                        println!("✅ Discovered peer: {} at {}", peer_id, addr);
+                        found_peer = true;
+                    }
+                    break;
+                },
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    println!("Listening on: {}", address);
+                },
+                _ => {}
+            }
+        }
+    }).await;
+    
+    if discovery_result.is_err() || !found_peer {
+        println!("⚠️ Aucun pair découvert après {:?}. Le nœud reste en écoute...", discovery_timeout);
+    }
+
+    // Boucle passive complète
     while let Some(event) = swarm.next().await {
         match event {
             SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
@@ -107,24 +136,20 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
                         }
                     }
                 }
-            }
-
+            },
             SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
                 for (peer_id, addr) in peers {
                     println!("Discovered peer: {} at {}", peer_id, addr);
                 }
-            }
-
+            },
             SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
                 for (peer_id, addr) in peers {
                     println!("Peer expired: {} at {}", peer_id, addr);
                 }
-            }
-
+            },
             SwarmEvent::NewListenAddr { address, .. } => {
                 println!("Listening on: {}", address);
-            }
-
+            },
             _ => {}
         }
     }

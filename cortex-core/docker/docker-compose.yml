@@ -1,13 +1,15 @@
 version: "3.8"
 
 services:
-  cortex-node:
+  cortex-id:
     build:
       context: ../..
       dockerfile: cortex-core/docker/Dockerfile
     container_name: cortex-id
     image: cortex-id:latest
     network_mode: host
+    ports:
+      - "5353:5353/udp"
     environment:
       NODE_NAME: $(hostname)
     volumes:

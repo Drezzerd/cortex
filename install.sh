@@ -36,6 +36,7 @@ if [ ! -f "$IDENTITY_FILE" ]; then
       run --rm \
       -v "$CORTEX_DIR:/root/.cortex" \
       cortex-id
+
 else
     echo "==> Identité déjà présente : $IDENTITY_FILE"
 fi
@@ -67,6 +68,6 @@ mesh:
 EOF
 
 echo "==> Lancement du node Cortex via docker-compose"
-docker compose -f "$SCRIPT_DIR/cortex-core/docker/docker-compose.yml" up -d
+docker compose -f "cortex-core/docker/docker-compose.yml" up -d
 
 echo "✅ Installation terminée. Le nœud est prêt."
