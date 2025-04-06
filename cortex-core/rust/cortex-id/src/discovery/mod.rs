@@ -3,14 +3,16 @@ use crate::registry::{AnnounceMsg, Registry};
 use libp2p::{
     gossipsub::{Behaviour as Gossipsub, ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, IdentTopic, MessageAuthenticity},
     identity::Keypair,
+    kad::{store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
     mdns::{tokio::Behaviour as Mdns, Event as MdnsEvent},
+    multiaddr::{Multiaddr, Protocol},
     quic::{tokio::Transport as QuicTransport, Config as QuicConfig},
     swarm::{NetworkBehaviour, Swarm, SwarmEvent, Config as SwarmConfig},
     PeerId, Transport,
 };
 
 use tokio_stream::StreamExt;
-use tokio::time::{timeout, sleep, Duration};
+use tokio::time::{sleep, Duration};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -18,6 +20,7 @@ use std::sync::{Arc, Mutex};
 pub enum MeshEvent {
     Gossipsub(GossipsubEvent),
     Mdns(MdnsEvent),
+    Kad(KademliaEvent),
 }
 
 impl From<MdnsEvent> for MeshEvent {
@@ -32,6 +35,12 @@ impl From<GossipsubEvent> for MeshEvent {
     }
 }
 
+impl From<KademliaEvent> for MeshEvent {
+    fn from(event: KademliaEvent) -> Self {
+        MeshEvent::Kad(event)
+    }
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "MeshEvent")]
 pub struct MeshBehaviour {
@@ -39,6 +48,8 @@ pub struct MeshBehaviour {
     pub gossipsub: Gossipsub,
     #[behaviour(event_process = false)]
     pub mdns: Mdns,
+    #[behaviour(event_process = false)]
+    pub kad: Kademlia<MemoryStore>,
 }
 
 pub async fn run_discovery(keypair: Keypair) -> Result<()> {
@@ -60,7 +71,22 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     gossipsub.subscribe(&topic)?;
 
     let mdns = Mdns::new(Default::default(), local_peer_id)?;
-    let behaviour = MeshBehaviour { gossipsub, mdns };
+
+    let store = MemoryStore::new(local_peer_id);
+    let mut kad = Kademlia::with_config(local_peer_id, store, KademliaConfig::default());
+
+    if let Ok(seed) = std::env::var("CORTEX_BOOTSTRAP_PEER") {
+        if let Ok(addr) = seed.parse::<Multiaddr>() {
+            if let Some(Protocol::P2p(multihash)) = addr.iter().last() {
+                if let Ok(peer_id) = PeerId::from_multihash(multihash.clone()) {
+                    println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
+                    kad.add_address(&peer_id, addr);
+                }
+            }
+        }
+    }
+
+    let behaviour = MeshBehaviour { gossipsub, mdns, kad };
 
     let config = SwarmConfig::with_tokio_executor();
     let mut swarm = Swarm::new(transport, behaviour, local_peer_id, config);
@@ -71,7 +97,6 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
 
     let registry = Arc::new(Mutex::new(Registry::default()));
 
-    // Publication de l'état local
     let my_shards = vec!["layer_0/mlp", "layer_0/attn"]
         .into_iter().map(String::from).collect();
 
@@ -85,7 +110,6 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let json = serde_json::to_vec(&announce)?;
     swarm.behaviour_mut().gossipsub.publish(topic.clone(), json)?;
 
-    // Spawn affichage régulier du Registry
     let reg_clone = Arc::clone(&registry);
     tokio::spawn(async move {
         loop {
@@ -97,35 +121,6 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     });
 
-    // Délai de patience avant de vérifier la présence de pairs
-    let discovery_timeout = Duration::from_secs(10);
-    let mut found_peer = false;
-
-    let discovery_result = timeout(discovery_timeout, async {
-        println!("⏳ En attente de découverte de pairs pendant {discovery_timeout:?}...");
-        while let Some(event) = swarm.next().await {
-            println!("📡 Event reçu : {:?}", event);
-            match event {
-                SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
-                    for (peer_id, addr) in peers {
-                        println!("✅ Discovered peer: {} at {}", peer_id, addr);
-                        found_peer = true;
-                    }
-                    break;
-                },
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Listening on: {}", address);
-                },
-                _ => {}
-            }
-        }
-    }).await;
-    
-    if discovery_result.is_err() || !found_peer {
-        println!("⚠️ Aucun pair découvert après {:?}. Le nœud reste en écoute...", discovery_timeout);
-    }
-
-    // Boucle passive complète
     while let Some(event) = swarm.next().await {
         match event {
             SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
@@ -140,12 +135,16 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
             SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
                 for (peer_id, addr) in peers {
                     println!("Discovered peer: {} at {}", peer_id, addr);
+                    swarm.behaviour_mut().kad.add_address(&peer_id, addr);
                 }
             },
             SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
                 for (peer_id, addr) in peers {
                     println!("Peer expired: {} at {}", peer_id, addr);
                 }
+            },
+            SwarmEvent::Behaviour(MeshEvent::Kad(event)) => {
+                println!("🔁 Kademlia event: {:?}", event);
             },
             SwarmEvent::NewListenAddr { address, .. } => {
                 println!("Listening on: {}", address);

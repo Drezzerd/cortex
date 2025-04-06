@@ -3,33 +3,30 @@ FROM rust:1.81 as builder
 
 WORKDIR /app
 
-# Installation des outils nécessaires
-RUN apt-get update && apt-get install -y musl-tools && \
-    rustup target add x86_64-unknown-linux-musl
+# Install system dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev
 
-# Copier d'abord Cargo.toml pour optimiser le cache des dépendances
+# Pre-cache dependencies
 COPY cortex-core/rust/cortex-id/Cargo.toml ./
-
-# Dummy sources pour précompiler les dépendances
 RUN mkdir -p src && \
     echo "fn main() {}" > src/main.rs && \
     echo "pub fn dummy() {}" > src/lib.rs && \
     mkdir -p src/bin && \
     echo "fn main() {}" > src/bin/cortex-node.rs && \
-    cargo build --release --target x86_64-unknown-linux-musl
+    cargo build --release
 
-# Copier le vrai code source
+# Copy real source code
 COPY cortex-core/rust/cortex-id/src ./src
 
-# Build final
-RUN cargo build --release --target x86_64-unknown-linux-musl
+# Final build
+RUN cargo build --release
 
 # === Final image ===
-FROM alpine:latest
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates
+RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/cortex-node .
+COPY --from=builder /app/target/release/cortex-node .
 
 ENTRYPOINT ["./cortex-node"]
