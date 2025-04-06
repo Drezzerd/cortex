@@ -18,6 +18,7 @@ use tokio::time::{sleep, Duration};
 use anyhow::{Result, anyhow};
 use std::sync::{Arc, Mutex};
 use futures::StreamExt;
+use libp2p::StreamMuxerBox;
 
 #[derive(Debug)]
 pub enum MeshEvent {
@@ -56,7 +57,9 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let local_peer_id = PeerId::from(keypair.public());
 
     // Updated for compatibility with libp2p 0.53
+    // Fix: Create a transport compatible with StreamMuxerBox
     let transport = quic::tokio::Transport::new(quic::Config::new(&keypair))
+        .map(|(peer_id, conn)| (peer_id, StreamMuxerBox::new(conn)))
         .boxed();
     
     // Création du comportement Gossipsub
@@ -68,7 +71,7 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let mut gossipsub = Gossipsub::new(
         MessageAuthenticity::Signed(keypair.clone()),
         gossipsub_config,
-    )?;
+    ).map_err(|e| anyhow!("Failed to create gossipsub: {}", e))?; // Fix: Convert string error to anyhow
     
     let topic = IdentTopic::new("cortex/announce");
     gossipsub.subscribe(&topic)?;
@@ -85,18 +88,18 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     if let Ok(seed) = std::env::var("CORTEX_BOOTSTRAP_PEER") {
         if let Ok(addr) = seed.parse::<Multiaddr>() {
             if let Some(Protocol::P2p(multihash)) = addr.iter().last() {
-                // Fix: Convert multihash to PeerId correctly
-                if let Ok(peer_id) = PeerId::from_multihash(multihash.clone()) {
-                    println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
-                    kad.add_address(&peer_id, addr);
-                }
+                // Fix: Correct conversion from multihash to PeerId
+                // Use the correct method or convert the type properly
+                let peer_id = PeerId::from_multihash(multihash).map_err(|_| anyhow!("Invalid multihash"))?;
+                println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
+                kad.add_address(&peer_id, addr);
             }
         }
     }
 
     let behaviour = MeshBehaviour { gossipsub, mdns, kad };
 
-    // Updated for libp2p 0.53: proper Swarm construction
+    // Fix: Use the updated transport that's compatible with StreamMuxerBox
     let mut swarm = Swarm::new(
         transport,
         behaviour,
