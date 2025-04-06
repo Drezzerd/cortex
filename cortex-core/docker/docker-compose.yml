@@ -1,12 +1,15 @@
-version: '3.9'
+version: "3.8"
 
 services:
-  cortex-id:
+  cortex-node:
     build:
       context: ../..
       dockerfile: cortex-core/docker/Dockerfile
     container_name: cortex-id
-    image: cortex-id:latest   
+    image: cortex-id:latest
+    network_mode: host
+    environment:
+      NODE_NAME: $(hostname)
     volumes:
       - ~/.cortex:/root/.cortex
     restart: "no"

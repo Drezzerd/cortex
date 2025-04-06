@@ -1,8 +1,7 @@
-// ----- discovery/mod.rs -----
+use crate::registry::{AnnounceMsg, Registry};
+
 use libp2p::{
-    gossipsub::{
-        Behaviour as Gossipsub, ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, MessageAuthenticity,
-    },
+    gossipsub::{Behaviour as Gossipsub, ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, IdentTopic, MessageAuthenticity},
     identity::Keypair,
     mdns::{tokio::Behaviour as Mdns, Event as MdnsEvent},
     quic::{tokio::Transport as QuicTransport, Config as QuicConfig},
@@ -11,7 +10,9 @@ use libp2p::{
 };
 
 use tokio_stream::StreamExt;
+use tokio::time::{sleep, Duration};
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 pub enum MeshEvent {
@@ -41,66 +42,89 @@ pub struct MeshBehaviour {
 }
 
 pub async fn run_discovery(keypair: Keypair) -> Result<()> {
-    let peer_id = PeerId::from(keypair.public());
+    let local_peer_id = PeerId::from(keypair.public());
 
-    // Configuration de base pour quic
-    let transport = QuicTransport::new(QuicConfig::new(&keypair));
+    let transport = QuicTransport::new(QuicConfig::new(&keypair))
+        .map(|(peer_id, conn), _| {
+            use libp2p::core::muxing::StreamMuxerBox;
+            (peer_id, StreamMuxerBox::new(conn))
+        })
+        .boxed();
 
-    // Convertir en StreamMuxerBox pour le muxing 
-    let transport = transport.map(|(peer_id, conn), _| {
-        // Utiliser l'API correcte pour convertir une connexion QuicTransport en StreamMuxerBox
-        use libp2p::core::muxing::StreamMuxerBox;
-
-        (peer_id, StreamMuxerBox::new(conn))
-    }).boxed();
-
-    // Configuration de gossipsub
-    let gossipsub_config = GossipsubConfigBuilder::default().build().expect("Failed to build gossipsub config");
-    let gossipsub = Gossipsub::new(
+    let gossipsub_config = GossipsubConfigBuilder::default().build()?;
+    let mut gossipsub = Gossipsub::new(
         MessageAuthenticity::Signed(keypair.clone()),
         gossipsub_config,
     ).expect("Failed to create gossipsub");
+    let topic = IdentTopic::new("cortex/announce");
+    gossipsub.subscribe(&topic)?;
 
-    let mdns = Mdns::new(Default::default(), peer_id).expect("Failed to create mDNS");
+    let mdns = Mdns::new(Default::default(), local_peer_id)?;
     let behaviour = MeshBehaviour { gossipsub, mdns };
 
-    // Correction: utiliser with_tokio_executor() au lieu de new()
     let config = SwarmConfig::with_tokio_executor();
-    
-    // Création du swarm avec la config explicite
-    let mut swarm = Swarm::new(transport, behaviour, peer_id, config);
-
-    // Écouter sur une adresse locale
+    let mut swarm = Swarm::new(transport, behaviour, local_peer_id, config);
     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
 
-    println!("Peer ID: {}", peer_id);
+    println!("Peer ID: {}", local_peer_id);
     println!("Listening for connections...");
 
-    // Boucle d'événements
+    let registry = Arc::new(Mutex::new(Registry::default()));
+
+    // Publication de l'état local
+    let my_shards = vec!["layer_0/mlp", "layer_0/attn"]
+        .into_iter().map(String::from).collect();
+
+    let announce = AnnounceMsg {
+        node_id: local_peer_id.to_string(),
+        shards: my_shards,
+        version: "v1.0.0".into(),
+        vram_free_mb: 2048,
+    };
+
+    let json = serde_json::to_vec(&announce)?;
+    swarm.behaviour_mut().gossipsub.publish(topic.clone(), json)?;
+
+    // Spawn affichage régulier du Registry
+    let reg_clone = Arc::clone(&registry);
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(10)).await;
+            if let Ok(r) = reg_clone.lock() {
+                println!("\n📦 Registry Snapshot:");
+                println!("{}", r.snapshot_json());
+            }
+        }
+    });
+
     while let Some(event) = swarm.next().await {
         match event {
-            SwarmEvent::Behaviour(MeshEvent::Gossipsub(e)) => {
-                println!("Gossipsub event: {:?}", e);
-            }
-            SwarmEvent::Behaviour(MeshEvent::Mdns(e)) => {
-                match e {
-                    MdnsEvent::Discovered(peers) => {
-                        for (peer_id, addr) in peers {
-                            println!("Discovered peer: {} at {}", peer_id, addr);
-                            // Vous pourriez essayer de vous connecter ici si nécessaire
-                            // swarm.dial(peer_id)?;
-                        }
-                    }
-                    MdnsEvent::Expired(peers) => {
-                        for (peer_id, addr) in peers {
-                            println!("Peer expired: {} at {}", peer_id, addr);
+            SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
+                if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
+                    if msg.node_id != local_peer_id.to_string() {
+                        if let Ok(mut reg) = registry.lock() {
+                            reg.update_from_announce(msg);
                         }
                     }
                 }
             }
+
+            SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
+                for (peer_id, addr) in peers {
+                    println!("Discovered peer: {} at {}", peer_id, addr);
+                }
+            }
+
+            SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
+                for (peer_id, addr) in peers {
+                    println!("Peer expired: {} at {}", peer_id, addr);
+                }
+            }
+
             SwarmEvent::NewListenAddr { address, .. } => {
                 println!("Listening on: {}", address);
             }
+
             _ => {}
         }
     }

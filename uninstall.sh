@@ -25,7 +25,15 @@ else
     echo "Aucune image nommée $IMAGE_NAME à supprimer."
 fi
 
-echo "Suppression des images <none> non utilisées..."
-docker image prune -f
+echo "Suppression des conteneurs liés aux images <none>..."
+for image_id in $(docker images -f "dangling=true" -q); do
+  for container_id in $(docker ps -a -q --filter ancestor="$image_id"); do
+    echo "Suppression du conteneur $container_id lié à $image_id"
+    docker rm -f "$container_id"
+  done
+  echo "Suppression de l’image $image_id"
+  docker rmi -f "$image_id"
+done
+
 
 echo "Désinstallation terminée."
