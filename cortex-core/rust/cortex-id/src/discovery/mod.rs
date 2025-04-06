@@ -6,18 +6,17 @@ use libp2p::{
     identity::Keypair,
     // Updated kad imports
     kad::{self, store::MemoryStore, Behaviour as Kademlia, Config as KademliaConfig, Event as KademliaEvent},
-    // Updated mdns imports
-    mdns::{self, Behaviour as Mdns, Config as MdnsConfig, Event as MdnsEvent},
+    // Updated mdns imports - now with Tokio provider
+    mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig, Event as MdnsEvent},
     multiaddr::{Multiaddr, Protocol},
     quic,
-    swarm::{NetworkBehaviour, Swarm, SwarmEvent, Config as SwarmConfig},
+    swarm::{NetworkBehaviour, Swarm, SwarmEvent},
     PeerId, Transport
 };
 
 use tokio::time::{sleep, Duration};
 use anyhow::{Result, anyhow};
 use std::sync::{Arc, Mutex};
-use std::error::Error as StdError;
 use futures::StreamExt;
 
 #[derive(Debug)]
@@ -49,7 +48,7 @@ impl From<KademliaEvent> for MeshEvent {
 #[behaviour(out_event = "MeshEvent")]
 pub struct MeshBehaviour {
     pub gossipsub: Gossipsub,
-    pub mdns: Mdns<MeshBehaviour>,
+    pub mdns: Mdns,
     pub kad: Kademlia<MemoryStore>,
 }
 
@@ -74,7 +73,7 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let topic = IdentTopic::new("cortex/announce");
     gossipsub.subscribe(&topic)?;
 
-    // Mise à jour pour mdns - Fixed: add peer_id parameter
+    // Fixed: Use the Tokio MDNS provider
     let mdns = Mdns::new(MdnsConfig::default(), local_peer_id)?;
 
     // Configuration de Kademlia
@@ -86,8 +85,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     if let Ok(seed) = std::env::var("CORTEX_BOOTSTRAP_PEER") {
         if let Ok(addr) = seed.parse::<Multiaddr>() {
             if let Some(Protocol::P2p(multihash)) = addr.iter().last() {
-                // Fixed: correct conversion from multihash to PeerId
-                if let Ok(peer_id) = PeerId::from_multihash(multihash) {
+                // Fix: Convert multihash to PeerId correctly
+                if let Ok(peer_id) = PeerId::from_multihash(multihash.clone()) {
                     println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
                     kad.add_address(&peer_id, addr);
                 }
@@ -97,12 +96,12 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
 
     let behaviour = MeshBehaviour { gossipsub, mdns, kad };
 
-    // Updated for libp2p 0.53: proper Swarm construction with SwarmConfig
+    // Updated for libp2p 0.53: proper Swarm construction
     let mut swarm = Swarm::new(
         transport,
         behaviour,
         local_peer_id,
-        SwarmConfig::default()
+        libp2p::swarm::Config::with_tokio_executor()
     );
     
     // Écoute sur toutes les interfaces
@@ -141,7 +140,6 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     });
 
     // Boucle principale de traitement des événements
-    // Fixed: use StreamExt::next() instead of next_event()
     loop {
         tokio::select! {
             event = swarm.next() => {
