@@ -1,9 +1,9 @@
 use cortex_id::discovery::run_discovery;
-use cortex_id::identity::load_or_generate_keypair;
+use cortex_id::identity::load_or_generate_identity;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let keypair = load_or_generate_keypair()?;
+    let keypair = load_or_generate_identity()?.into();
     run_discovery(keypair).await?;
     Ok(())
 }

@@ -1,17 +1,19 @@
 use crate::registry::{AnnounceMsg, Registry};
 
 use libp2p::{
-    gossipsub::{self, Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic, MessageAuthenticity, ValidationMode},
+    // Updated imports for gossipsub
+    gossipsub::{self, Gossipsub, GossipsubEvent, IdentTopic, MessageAuthenticity, ValidationMode},
     identity::Keypair,
+    // Updated imports for kad
     kad::{self, store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
+    // Updated imports for mdns
     mdns::{self, Mdns, MdnsConfig, MdnsEvent},
     multiaddr::{Multiaddr, Protocol},
     quic,
     swarm::{NetworkBehaviour, Swarm, SwarmEvent},
-    PeerId, Transport,
+    PeerId,
 };
 
-use futures::StreamExt;
 use tokio::time::{sleep, Duration};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
@@ -52,7 +54,7 @@ pub struct MeshBehaviour {
 pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let local_peer_id = PeerId::from(keypair.public());
 
-    // Mise à jour pour compatibilité avec libp2p 0.53
+    // Updated for compatibility with libp2p 0.53
     let transport = quic::tokio::Transport::new(quic::Config::new(&keypair));
     
     // Création du comportement Gossipsub
@@ -74,14 +76,15 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
 
     // Configuration de Kademlia
     let store = MemoryStore::new(local_peer_id);
-    let mut kad_config = KademliaConfig::default();
+    let kad_config = KademliaConfig::default();
     let mut kad = Kademlia::with_config(local_peer_id, store, kad_config);
 
     // Ajout d'un nœud bootstrap si configuré
     if let Ok(seed) = std::env::var("CORTEX_BOOTSTRAP_PEER") {
         if let Ok(addr) = seed.parse::<Multiaddr>() {
             if let Some(Protocol::P2p(multihash)) = addr.iter().last() {
-                if let Ok(peer_id) = PeerId::try_from_multihash(multihash) {
+                // Fixed: using from_multihash instead of try_from_multihash
+                if let Ok(peer_id) = PeerId::from_multihash(multihash) {
                     println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
                     kad.add_address(&peer_id, addr);
                 }
@@ -91,8 +94,13 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
 
     let behaviour = MeshBehaviour { gossipsub, mdns, kad };
 
-    // Création du swarm
-    let mut swarm = Swarm::with_tokio_transport(transport, behaviour, local_peer_id)?;
+    // Updated for libp2p 0.53: using Swarm::new instead of with_tokio_transport
+    let mut swarm = Swarm::new(
+        transport,
+        behaviour,
+        local_peer_id,
+        Swarm::config(),
+    );
     
     // Écoute sur toutes les interfaces
     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
