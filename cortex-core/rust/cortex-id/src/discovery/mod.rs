@@ -10,13 +10,15 @@ use libp2p::{
     mdns::{self, Behaviour as Mdns, Config as MdnsConfig, Event as MdnsEvent},
     multiaddr::{Multiaddr, Protocol},
     quic,
-    swarm::{NetworkBehaviour, Swarm, SwarmEvent},
+    swarm::{NetworkBehaviour, Swarm, SwarmEvent, Config as SwarmConfig},
     PeerId, Transport
 };
 
 use tokio::time::{sleep, Duration};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::sync::{Arc, Mutex};
+use std::error::Error as StdError;
+use futures::StreamExt;
 
 #[derive(Debug)]
 pub enum MeshEvent {
@@ -47,7 +49,7 @@ impl From<KademliaEvent> for MeshEvent {
 #[behaviour(out_event = "MeshEvent")]
 pub struct MeshBehaviour {
     pub gossipsub: Gossipsub,
-    pub mdns: Mdns,
+    pub mdns: Mdns<MeshBehaviour>,
     pub kad: Kademlia<MemoryStore>,
 }
 
@@ -62,7 +64,7 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let gossipsub_config = gossipsub::ConfigBuilder::default()
         .validation_mode(ValidationMode::Strict)
         .build()
-        .expect("Valid config");
+        .map_err(|e| anyhow!("Failed to build gossipsub config: {}", e))?;
         
     let mut gossipsub = Gossipsub::new(
         MessageAuthenticity::Signed(keypair.clone()),
@@ -72,8 +74,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let topic = IdentTopic::new("cortex/announce");
     gossipsub.subscribe(&topic)?;
 
-    // Mise à jour pour mdns
-    let mdns = Mdns::new(MdnsConfig::default())?;
+    // Mise à jour pour mdns - Fixed: add peer_id parameter
+    let mdns = Mdns::new(MdnsConfig::default(), local_peer_id)?;
 
     // Configuration de Kademlia
     let store = MemoryStore::new(local_peer_id);
@@ -84,8 +86,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     if let Ok(seed) = std::env::var("CORTEX_BOOTSTRAP_PEER") {
         if let Ok(addr) = seed.parse::<Multiaddr>() {
             if let Some(Protocol::P2p(multihash)) = addr.iter().last() {
-                // Fixed: conversion from multihash to PeerId
-                if let Ok(peer_id) = PeerId::from_multihash(multihash.clone()) {
+                // Fixed: correct conversion from multihash to PeerId
+                if let Ok(peer_id) = PeerId::from_multihash(multihash) {
                     println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
                     kad.add_address(&peer_id, addr);
                 }
@@ -95,11 +97,12 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
 
     let behaviour = MeshBehaviour { gossipsub, mdns, kad };
 
-    // Updated for libp2p 0.53: proper Swarm construction
+    // Updated for libp2p 0.53: proper Swarm construction with SwarmConfig
     let mut swarm = Swarm::new(
         transport,
         behaviour,
         local_peer_id,
+        SwarmConfig::default()
     );
     
     // Écoute sur toutes les interfaces
@@ -138,41 +141,44 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     });
 
     // Boucle principale de traitement des événements
+    // Fixed: use StreamExt::next() instead of next_event()
     loop {
         tokio::select! {
-            event = swarm.next_event() => {
-                match event {
-                    SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { 
-                        propagation_source: _,
-                        message_id: _,
-                        message,
-                    })) => {
-                        if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
-                            if msg.node_id != local_peer_id.to_string() {
-                                if let Ok(mut reg) = registry.lock() {
-                                    reg.update_from_announce(msg);
+            event = swarm.next() => {
+                if let Some(event) = event {
+                    match event {
+                        SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { 
+                            propagation_source: _,
+                            message_id: _,
+                            message,
+                        })) => {
+                            if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
+                                if msg.node_id != local_peer_id.to_string() {
+                                    if let Ok(mut reg) = registry.lock() {
+                                        reg.update_from_announce(msg);
+                                    }
                                 }
                             }
-                        }
-                    },
-                    SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
-                        for (peer_id, addr) in peers {
-                            println!("Discovered peer: {} at {}", peer_id, addr);
-                            swarm.behaviour_mut().kad.add_address(&peer_id, addr);
-                        }
-                    },
-                    SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
-                        for (peer_id, addr) in peers {
-                            println!("Peer expired: {} at {}", peer_id, addr);
-                        }
-                    },
-                    SwarmEvent::Behaviour(MeshEvent::Kad(event)) => {
-                        println!("🔁 Kademlia event: {:?}", event);
-                    },
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("Listening on: {}", address);
-                    },
-                    _ => {}
+                        },
+                        SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
+                            for (peer_id, addr) in peers {
+                                println!("Discovered peer: {} at {}", peer_id, addr);
+                                swarm.behaviour_mut().kad.add_address(&peer_id, addr);
+                            }
+                        },
+                        SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
+                            for (peer_id, addr) in peers {
+                                println!("Peer expired: {} at {}", peer_id, addr);
+                            }
+                        },
+                        SwarmEvent::Behaviour(MeshEvent::Kad(event)) => {
+                            println!("🔁 Kademlia event: {:?}", event);
+                        },
+                        SwarmEvent::NewListenAddr { address, .. } => {
+                            println!("Listening on: {}", address);
+                        },
+                        _ => {}
+                    }
                 }
             }
         }
