@@ -6,19 +6,17 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev
 
-# Pre-cache dependencies
-COPY cortex-core/rust/cortex-id/Cargo.toml ./
-RUN mkdir -p src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "pub fn dummy() {}" > src/lib.rs && \
-    mkdir -p src/bin && \
-    echo "fn main() {}" > src/bin/cortex-node.rs && \
-    cargo build --release
+# Pré-copie pour cache optimal
+COPY cortex-core/rust/cortex-id/Cargo.toml .
 
-# Copy real source code
-COPY cortex-core/rust/cortex-id/src ./src
+# Dummy build to cache dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || true
+RUN rm -rf src
 
-# Final build
+# Copy actual full source
+COPY cortex-core/rust/cortex-id/ .
+
+# Compile
 RUN cargo build --release
 
 # === Final image ===

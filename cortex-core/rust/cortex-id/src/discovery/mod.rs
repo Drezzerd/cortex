@@ -1,17 +1,17 @@
 use crate::registry::{AnnounceMsg, Registry};
 
 use libp2p::{
-    gossipsub::{Behaviour as Gossipsub, ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, IdentTopic, MessageAuthenticity},
+    gossipsub::{self, Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic, MessageAuthenticity, ValidationMode},
     identity::Keypair,
-    kad::{store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
-    mdns::{tokio::Behaviour as Mdns, Event as MdnsEvent},
+    kad::{self, store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
+    mdns::{self, Mdns, MdnsConfig, MdnsEvent},
     multiaddr::{Multiaddr, Protocol},
-    quic::{tokio::Transport as QuicTransport, Config as QuicConfig},
-    swarm::{NetworkBehaviour, Swarm, SwarmEvent, Config as SwarmConfig},
+    quic,
+    swarm::{NetworkBehaviour, Swarm, SwarmEvent},
     PeerId, Transport,
 };
 
-use tokio_stream::StreamExt;
+use futures::StreamExt;
 use tokio::time::{sleep, Duration};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
@@ -42,43 +42,46 @@ impl From<KademliaEvent> for MeshEvent {
 }
 
 #[derive(NetworkBehaviour)]
-#[behaviour(to_swarm = "MeshEvent")]
+#[behaviour(out_event = "MeshEvent")]
 pub struct MeshBehaviour {
-    #[behaviour(event_process = false)]
     pub gossipsub: Gossipsub,
-    #[behaviour(event_process = false)]
     pub mdns: Mdns,
-    #[behaviour(event_process = false)]
     pub kad: Kademlia<MemoryStore>,
 }
 
 pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let local_peer_id = PeerId::from(keypair.public());
 
-    let transport = QuicTransport::new(QuicConfig::new(&keypair))
-        .map(|(peer_id, conn), _| {
-            use libp2p::core::muxing::StreamMuxerBox;
-            (peer_id, StreamMuxerBox::new(conn))
-        })
-        .boxed();
-
-    let gossipsub_config = GossipsubConfigBuilder::default().build()?;
+    // Mise à jour pour compatibilité avec libp2p 0.53
+    let transport = quic::tokio::Transport::new(quic::Config::new(&keypair));
+    
+    // Création du comportement Gossipsub
+    let gossipsub_config = gossipsub::ConfigBuilder::default()
+        .validation_mode(ValidationMode::Strict)
+        .build()
+        .expect("Valid config");
+        
     let mut gossipsub = Gossipsub::new(
         MessageAuthenticity::Signed(keypair.clone()),
         gossipsub_config,
-    ).expect("Failed to create gossipsub");
+    )?;
+    
     let topic = IdentTopic::new("cortex/announce");
     gossipsub.subscribe(&topic)?;
 
-    let mdns = Mdns::new(Default::default(), local_peer_id)?;
+    // Mise à jour pour mdns
+    let mdns = Mdns::new(MdnsConfig::default(), local_peer_id)?;
 
+    // Configuration de Kademlia
     let store = MemoryStore::new(local_peer_id);
-    let mut kad = Kademlia::with_config(local_peer_id, store, KademliaConfig::default());
+    let mut kad_config = KademliaConfig::default();
+    let mut kad = Kademlia::with_config(local_peer_id, store, kad_config);
 
+    // Ajout d'un nœud bootstrap si configuré
     if let Ok(seed) = std::env::var("CORTEX_BOOTSTRAP_PEER") {
         if let Ok(addr) = seed.parse::<Multiaddr>() {
             if let Some(Protocol::P2p(multihash)) = addr.iter().last() {
-                if let Ok(peer_id) = PeerId::from_multihash(multihash.clone()) {
+                if let Ok(peer_id) = PeerId::try_from_multihash(multihash) {
                     println!("🌐 Ajout du noeud bootstrap sécurisé : {} @ {}", peer_id, addr);
                     kad.add_address(&peer_id, addr);
                 }
@@ -88,8 +91,10 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
 
     let behaviour = MeshBehaviour { gossipsub, mdns, kad };
 
-    let config = SwarmConfig::with_tokio_executor();
-    let mut swarm = Swarm::new(transport, behaviour, local_peer_id, config);
+    // Création du swarm
+    let mut swarm = Swarm::with_tokio_transport(transport, behaviour, local_peer_id)?;
+    
+    // Écoute sur toutes les interfaces
     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
 
     println!("Peer ID: {}", local_peer_id);
@@ -108,8 +113,11 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     };
 
     let json = serde_json::to_vec(&announce)?;
+    
+    // Publiez le message initial
     swarm.behaviour_mut().gossipsub.publish(topic.clone(), json)?;
 
+    // Configuration des snapshots périodiques
     let reg_clone = Arc::clone(&registry);
     tokio::spawn(async move {
         loop {
@@ -121,9 +129,14 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     });
 
+    // Boucle principale de traitement des événements
     while let Some(event) = swarm.next().await {
         match event {
-            SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
+            SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { 
+                propagation_source: _,
+                message_id: _,
+                message,
+            })) => {
                 if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
                     if msg.node_id != local_peer_id.to_string() {
                         if let Ok(mut reg) = registry.lock() {

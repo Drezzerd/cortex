@@ -19,6 +19,7 @@ base64 = "0.21"
 dirs = "5.0"
 tokio-stream = "0.1"
 anyhow = "1"
+futures = "0.3"
 
 [lib]
 name = "cortex_id"
