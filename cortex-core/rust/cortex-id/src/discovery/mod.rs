@@ -24,7 +24,8 @@ use libp2p::{
     PeerId, Transport,
 };
 
-use tokio_stream::StreamExt;
+// Change this import to use futures from libp2p
+use libp2p::futures::StreamExt;
 use tokio::time::{sleep, Duration};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
@@ -157,11 +158,10 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     });
 
-    // Obtenir une référence à swarm pour notre boucle d'événements principale
+    // Modified to use proper error handling with anyhow
     let mut swarm = Arc::try_unwrap(swarm_clone)
-        .expect("Failed to get exclusive ownership of swarm")
-        .into_inner()
-        .expect("Failed to unlock mutex");
+        .map_err(|_| anyhow::anyhow!("Failed to get exclusive ownership of swarm"))?
+        .into_inner()?;
 
     loop {
         match swarm.select_next_some().await {
@@ -191,7 +191,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
             SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::UnroutablePeer { peer })) => {
                 println!("⚠️ Unroutable peer: {}", peer);
             },
-            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::OutboundQueryCompleted { result, ..})) => {
+            // Changed this to use OutboundQueryProgressed instead of OutboundQueryCompleted
+            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::OutboundQueryProgressed { result, ..})) => {
                 match result {
                     Ok(_) => println!("✅ DHT query completed successfully"),
                     Err(e) => println!("⚠️ DHT query failed: {:?}", e),
