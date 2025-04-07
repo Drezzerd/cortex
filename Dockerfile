@@ -24,6 +24,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
-COPY --from=builder /app/target/release/cortex-node .
+COPY --from=builder /app/target/release/cortex-id .
 
-ENTRYPOINT ["./cortex-node"]
+ENTRYPOINT ["./cortex-id"]

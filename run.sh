@@ -3,7 +3,7 @@
 set -e
 
 IMAGE="cortex-id"
-NAME="cortex-node"
+NAME="cortex-id"
 
 # Supprime l'ancien conteneur si présent
 if docker ps -a --format '{{.Names}}' | grep -Eq "^${NAME}\$"; then

@@ -7,7 +7,7 @@ use anyhow::Result;
 
 /// Cortex Node CLI
 #[derive(Parser, Debug)]
-#[command(name = "cortex-node")]
+#[command(name = "cortex-id")]
 #[command(about = "Lance un noeud Cortex avec options", long_about = None)]
 struct Cli {
     /// Affiche une snapshot unique du registry puis quitte
