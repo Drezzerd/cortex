@@ -14,6 +14,7 @@ use libp2p::{
         Behaviour as Kademlia,
         Config as KademliaConfig,
         Event as KademliaEvent,
+        QueryResult,
         RecordKey,
     },
     mdns::{tokio::Behaviour as Mdns, Event as MdnsEvent},
@@ -124,12 +125,15 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
     let json = serde_json::to_vec(&announce)?;
     swarm.behaviour_mut().gossipsub.publish(topic.clone(), json)?;
 
-    // Clone de swarm pour notre tâche de recherche DHT différée
-    let swarm_clone = Arc::new(Mutex::new(swarm));
-    let swarm_for_task = Arc::clone(&swarm_clone);
+    // FIX 1: Instead of sharing swarm with a mutex, use channels
+    let registry_clone = Arc::clone(&registry);
     let discovery_key_clone = discovery_key.clone();
     
-    // Tâche pour différer la recherche DHT
+    // Spawn a separate task that sends DHT search commands through a channel
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<()>(10);
+    let cmd_tx_clone = cmd_tx.clone();
+    
+    // Task for triggering DHT searches
     tokio::spawn(async move {
         // Attendre que mDNS ait une chance de découvrir des pairs
         sleep(Duration::from_secs(5)).await;
@@ -138,15 +142,17 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         let max_attempts = 5;
         
         while attempts < max_attempts {
-            if let Ok(mut s) = swarm_for_task.lock() {
-                println!("🔍 Recherche de fournisseurs DHT, tentative {}/{}", attempts + 1, max_attempts);
-                s.behaviour_mut().kad.get_providers(discovery_key_clone.clone());
+            println!("🔍 Recherche de fournisseurs DHT, tentative {}/{}", attempts + 1, max_attempts);
+            // Send command to perform DHT search
+            if let Err(e) = cmd_tx_clone.send(()).await {
+                println!("Error sending DHT search command: {}", e);
             }
             attempts += 1;
             sleep(Duration::from_secs(10)).await;
         }
     });
 
+    // Spawn task for periodic registry snapshots
     let reg_clone = Arc::clone(&registry);
     tokio::spawn(async move {
         loop {
@@ -158,53 +164,71 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     });
 
-    // Modified to use proper error handling with anyhow
-    let mut swarm = Arc::try_unwrap(swarm_clone)
-        .map_err(|_| anyhow::anyhow!("Failed to get exclusive ownership of swarm"))?
-        .into_inner()?;
-
+    // Main event loop
     loop {
-        match swarm.select_next_some().await {
-            SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
-                if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
-                    if msg.node_id != local_peer_id.to_string() {
-                        if let Ok(mut reg) = registry.lock() {
-                            reg.update_from_announce(msg);
+        tokio::select! {
+            // Process any commands received to trigger DHT searches
+            Some(_) = cmd_rx.recv() => {
+                swarm.behaviour_mut().kad.get_providers(discovery_key_clone.clone());
+            }
+            
+            // Process swarm events
+            event = swarm.select_next_some() => {
+                match event {
+                    SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
+                        if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
+                            if msg.node_id != local_peer_id.to_string() {
+                                if let Ok(mut reg) = registry_clone.lock() {
+                                    reg.update_from_announce(msg);
+                                }
+                            }
                         }
-                    }
+                    },
+                    SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
+                        for (peer_id, addr) in peers {
+                            println!("🔍 Discovered peer: {} at {}", peer_id, addr);
+                            swarm.behaviour_mut().kad.add_address(&peer_id, addr);
+                        }
+                    },
+                    SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
+                        for (peer_id, addr) in peers {
+                            println!("⚠️ Peer expired: {} at {}", peer_id, addr);
+                        }
+                    },
+                    SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::RoutingUpdated { peer, .. })) => {
+                        println!("✅ Routing table updated with peer: {}", peer);
+                    },
+                    SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::UnroutablePeer { peer })) => {
+                        println!("⚠️ Unroutable peer: {}", peer);
+                    },
+                    // FIX 2: Use proper pattern matching for QueryResult
+                    SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::OutboundQueryProgressed { result, ..})) => {
+                        match result {
+                            QueryResult::GetProviders(Ok(providers)) => {
+                                println!("✅ DHT GetProviders query completed successfully with {} providers", 
+                                    providers.providers.len());
+                            },
+                            QueryResult::StartProviding(Ok(_)) => {
+                                println!("✅ DHT StartProviding query completed successfully");
+                            },
+                            QueryResult::GetProviders(Err(e)) => {
+                                println!("⚠️ DHT GetProviders query failed: {:?}", e);
+                            },
+                            QueryResult::StartProviding(Err(e)) => {
+                                println!("⚠️ DHT StartProviding query failed: {:?}", e);
+                            },
+                            _ => println!("✅ Other DHT query completed: {:?}", result),
+                        }
+                    },
+                    SwarmEvent::Behaviour(MeshEvent::Kad(event)) => {
+                        println!("🔁 Kademlia event: {:?}", event);
+                    },
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("🔊 Listening on: {}", address);
+                    },
+                    _ => {}
                 }
-            },
-            SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Discovered(peers))) => {
-                for (peer_id, addr) in peers {
-                    println!("🔍 Discovered peer: {} at {}", peer_id, addr);
-                    swarm.behaviour_mut().kad.add_address(&peer_id, addr);
-                }
-            },
-            SwarmEvent::Behaviour(MeshEvent::Mdns(MdnsEvent::Expired(peers))) => {
-                for (peer_id, addr) in peers {
-                    println!("⚠️ Peer expired: {} at {}", peer_id, addr);
-                }
-            },
-            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::RoutingUpdated { peer, .. })) => {
-                println!("✅ Routing table updated with peer: {}", peer);
-            },
-            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::UnroutablePeer { peer })) => {
-                println!("⚠️ Unroutable peer: {}", peer);
-            },
-            // Changed this to use OutboundQueryProgressed instead of OutboundQueryCompleted
-            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::OutboundQueryProgressed { result, ..})) => {
-                match result {
-                    Ok(_) => println!("✅ DHT query completed successfully"),
-                    Err(e) => println!("⚠️ DHT query failed: {:?}", e),
-                }
-            },
-            SwarmEvent::Behaviour(MeshEvent::Kad(event)) => {
-                println!("🔁 Kademlia event: {:?}", event);
-            },
-            SwarmEvent::NewListenAddr { address, .. } => {
-                println!("🔊 Listening on: {}", address);
-            },
-            _ => {}
+            }
         }
     }
 }
