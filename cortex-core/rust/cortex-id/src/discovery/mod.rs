@@ -134,8 +134,9 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     });
 
-    while let Some(event) = swarm.next().await {
-        match event {
+    use futures::stream::StreamExt;
+    loop {
+        match swarm.select_next_some().await {
             SwarmEvent::Behaviour(MeshEvent::Gossipsub(GossipsubEvent::Message { message, .. })) => {
                 if let Ok(msg) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
                     if msg.node_id != local_peer_id.to_string() {
@@ -156,6 +157,12 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
                     println!("Peer expired: {} at {}", peer_id, addr);
                 }
             },
+            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::RoutingUpdated { peer, .. })) => {
+                println!("✅ Routing table updated with peer: {}", peer);
+            },
+            SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::UnroutablePeer { peer })) => {
+                println!("⚠️ Unroutable peer: {}", peer);
+            },
             SwarmEvent::Behaviour(MeshEvent::Kad(event)) => {
                 println!("🔁 Kademlia event: {:?}", event);
             },
@@ -166,5 +173,5 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
         }
     }
 
-    Ok(())
+    // Ok(()) // <- unreachable now
 }
