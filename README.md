@@ -11,15 +11,27 @@ Le système prend en charge différentes architectures (dense, MoE, pipeline) et
 
 ## Objectifs
 
-Cortex vise à rendre possible l’exécution de modèles de langage à grande échelle sans infrastructure centralisée.
-L’approche repose sur trois principes fondamentaux :
+Cortex a pour but de permettre l’exécution distribuée de modèles de langage de grande taille (LLM) sur un ensemble de machines autonomes, sans infrastructure centralisée. Les objectifs sont :
 
-- Distribution — Répartir les charges computationnelles entre pairs pour dépasser les limites matérielles individuelles.
-- Souveraineté — Exécuter les modèles localement, sans dépendance à un cloud tiers, et sans exposition des données.
-- Interopérabilité — Offrir une architecture modulaire, capable d’orchestrer des fragments de modèle hétérogènes (dense, MoE, pipeline).
+### 1. **Scalabilité horizontale**
 
-À terme, Cortex doit permettre à n’importe quel groupe (individus, chercheurs, entreprises) de déployer un LLM complet en combinant des machines ordinaires.
-Parfait. Voici une proposition de section **Valeurs**, dans le même ton : concise, claire, sans emphase marketing.
+Permettre à des machines aux capacités limitées de contribuer à l’exécution d’un modèle en réseau. L’infrastructure doit s’adapter dynamiquement au nombre et à la nature des nœuds disponibles (CPU, GPU, RAM).
+
+### 2. **Exécution coopérative de LLM**
+
+Supporter plusieurs types d’architectures (dense, MoE, pipeline) en décomposant un modèle en unités exécutables distribuées (shards, experts, blocs). L’inférence complète est obtenue via coopération inter-nœuds.
+
+### 3. **Décentralisation totale**
+
+Aucune autorité centrale. Le routage, la découverte de pairs, la distribution des poids et la coordination doivent être entièrement distribués (via DHT, PubSub, etc.).
+
+### 4. **Souveraineté et confidentialité**
+
+Les contextes d’inférence restent localisés. Aucun transfert d’historique, de prompt ou de résultat n’est effectué sans consentement. Le chiffrement et la signature sont utilisés à tous les niveaux.
+
+### 5. **Tolérance aux pannes et reconfiguration**
+
+Le système doit détecter la disparition ou l’apparition de nœuds, réassigner les tâches automatiquement, et maintenir un service partiel en cas de défaillance. Reconfiguration à chaud.
 
 ---
 
