@@ -1,15 +1,11 @@
 # Cortex
 
-> L'infrastructure distribuée pour l’exécution parallèle de modèles de langage à grande échelle.
-
----
-
 ## Description
 
-**Cortex** est un moteur d’inférence conçu pour exécuter des modèles de langage de grande taille (LLM) en environnement distribué.
-Chaque nœud du réseau héberge une portion du modèle (shard, expert, ou bloc logique) et coopère avec d'autres pour effectuer une inférence complète, sans point central de coordination.
+**Cortex** est une infrastructure décentralisée conçue pour exécuter des modèles de langage de grande taille (LLM) à travers un réseau pair-à-pair.
+Chaque nœud du réseau héberge un fragment du modèle (ex. expert, shard, bloc) et coopère avec les autres pour répondre à une requête.
 
-Le système est compatible avec différentes architectures (MoE, dense, pipeline-parallel) et repose sur une couche réseau P2P sécurisée, à faible latence.
+Le système prend en charge différentes architectures (dense, MoE, pipeline) et s'appuie sur une couche réseau P2P chiffrée, sans point central de coordination.
 
 ---
 
