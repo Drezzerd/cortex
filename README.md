@@ -52,11 +52,10 @@ Bien vu. On peut donc ajouter cette étape explicite dans le README. Voici la se
 
 - Linux avec Docker + Docker Compose installés
 - Git
-- Accès à un terminal (avec ou sans `sudo` selon votre config)
 
 
 ```bash
-git clone <repo> cortex
+git clone https://github.com/Drezzerd/cortex.git
 cd cortex
 
 chmod +x install.sh        # rendre le script exécutable
