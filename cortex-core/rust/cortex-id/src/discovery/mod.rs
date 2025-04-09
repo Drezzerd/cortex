@@ -204,9 +204,8 @@ pub async fn run_discovery(keypair: Keypair) -> Result<()> {
                     // FIX 2: Use proper pattern matching for QueryResult
                     SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::OutboundQueryProgressed { result, ..})) => {
                         match result {
-                            QueryResult::GetProviders(Ok(providers)) => {
-                                println!("✅ DHT GetProviders query completed successfully with {} providers", 
-                                    providers.providers.len());
+                            QueryResult::GetProviders(Ok(_)) => {
+                                println!("✅ DHT GetProviders query completed successfully");
                             },
                             QueryResult::StartProviding(Ok(_)) => {
                                 println!("✅ DHT StartProviding query completed successfully");
