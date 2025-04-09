@@ -3,6 +3,7 @@ use libp2p::{
     gossipsub::{
         Behaviour as Gossipsub,
         ConfigBuilder as GossipsubConfigBuilder,
+        Config as GossipsubConfig,
         Event as GossipsubEvent,
         IdentTopic,
         MessageAuthenticity,
@@ -27,7 +28,7 @@ use tokio::time::{sleep, Duration};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
-const CORTEX_SHARED_KEY: &str = "cortex-mesh:v1";
+const CORTEX_SHARED_KEY: &[u8; 14] = b"cortex-mesh:v1";
 
 #[derive(Debug)]
 pub enum MeshEvent {
