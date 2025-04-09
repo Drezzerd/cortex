@@ -6,10 +6,10 @@
 
 ## Description
 
-**Cortex** est un moteur d’inférence décentralisé permettant l’exécution collective de modèles de langage massifs.  
-Chaque instance (appelée *nœud*) héberge un ou plusieurs fragments spécialisés du modèle (experts) et communique avec d’autres nœuds via un réseau pair-à-pair chiffré.
+**Cortex** est un moteur d’inférence conçu pour exécuter des modèles de langage de grande taille (LLM) en environnement distribué.
+Chaque nœud du réseau héberge une portion du modèle (shard, expert, ou bloc logique) et coopère avec d'autres pour effectuer une inférence complète, sans point central de coordination.
 
-Le système est conçu pour les architectures de type **Mixture of Experts (MoE)**, avec routage dynamique, activation top-k, quorum de validation, et tolérance aux pannes.
+Le système est compatible avec différentes architectures (MoE, dense, pipeline-parallel) et repose sur une couche réseau P2P sécurisée, à faible latence.
 
 ---
 
