@@ -11,9 +11,36 @@ Le système prend en charge différentes architectures (dense, MoE, pipeline) et
 
 ## Objectifs
 
-- Répartir l’exécution d’un modèle MoE sur un ensemble hétérogène de machines.
-- Assurer la cohérence, la sécurité et la souveraineté des calculs sans point de contrôle central.
-- Fournir un socle modulaire, extensible et indépendant de l’infrastructure cloud.
+Cortex vise à rendre possible l’exécution de modèles de langage à grande échelle sans infrastructure centralisée.
+L’approche repose sur trois principes fondamentaux :
+
+- Distribution — Répartir les charges computationnelles entre pairs pour dépasser les limites matérielles individuelles.
+- Souveraineté — Exécuter les modèles localement, sans dépendance à un cloud tiers, et sans exposition des données.
+- Interopérabilité — Offrir une architecture modulaire, capable d’orchestrer des fragments de modèle hétérogènes (dense, MoE, pipeline).
+
+À terme, Cortex doit permettre à n’importe quel groupe (individus, chercheurs, entreprises) de déployer un LLM complet en combinant des machines ordinaires.
+Parfait. Voici une proposition de section **Valeurs**, dans le même ton : concise, claire, sans emphase marketing.
+
+---
+
+## Valeurs
+
+Cortex est guidé par des principes fondamentaux, non négociables :
+
+- **Confidentialité par conception**  
+  Aucun échange de données n’est effectué sans contrôle explicite. Les contextes utilisateurs restent locaux.
+
+- **Souveraineté computationnelle**  
+  Chaque nœud exécute ce qu’il comprend et contrôle. Aucune dépendance à une entité centrale ou cloud propriétaire.
+
+- **Transparence et vérifiabilité**  
+  Le fonctionnement du système est ouvert, inspectable, reproductible.
+
+- **Résilience collective**  
+  Le réseau doit continuer de fonctionner malgré les déconnexions, les pannes ou les hétérogénéités matérielles.
+
+- **Neutralité d’usage**  
+  Cortex ne restreint pas les cas d’usage par design. Ce sont les pairs qui définissent la gouvernance, s’il y en a une.
 
 ---
 
@@ -29,20 +56,11 @@ Le système prend en charge différentes architectures (dense, MoE, pipeline) et
 
 ## État du projet
 
-- Prototype fonctionnel (exécution locale + réseau P2P).
-- Modules principaux définis : Loader, Scheduler, TokenRouter, Communicator, Registry.
-- Intégration d’un modèle MoE (DeepSeek) en cours de test distribué.
-
----
-
-## Installation
-Voici la section **Installation** mise à jour avec précision et sobriété, dans le ton du reste du README :
-
----
-
-## Installation
-
-Bien vu. On peut donc ajouter cette étape explicite dans le README. Voici la section **Installation** mise à jour, claire et exacte :
+- Découverte de pairs fonctionnelle via libp2p (mDNS et/ou DHT)
+- Génération d'identité persistente par nœud
+- Initialisation automatisée via script (install.sh)
+- Communication inter-nœuds (mesh) en cours d’expérimentation
+- Aucune exécution de modèle encore implémentée
 
 ---
 
@@ -50,7 +68,7 @@ Bien vu. On peut donc ajouter cette étape explicite dans le README. Voici la se
 
 **Pré-requis :**
 
-- Linux avec Docker + Docker Compose installés
+- Docker + Docker Compose installés
 - Git
 
 
@@ -58,8 +76,8 @@ Bien vu. On peut donc ajouter cette étape explicite dans le README. Voici la se
 git clone https://github.com/Drezzerd/cortex.git
 cd cortex
 
-chmod +x install.sh        # rendre le script exécutable
-./install.sh               # ajoutez 'sudo' si nécessaire
+chmod +x install.sh
+./install.sh 
 ```
 
 > Le script :
@@ -69,7 +87,7 @@ chmod +x install.sh        # rendre le script exécutable
 > - Génère `~/.cortex/config.yaml`
 > - Lance le nœud via `docker compose`
 
-Si une erreur de permission apparaît (ex : accès refusé à `~/.cortex` ou Docker non autorisé), relancez simplement :
+Si une erreur de permission apparaît (ex : accès refusé à `~/.cortex` ou Docker non autorisé), relancez :
 
 ```bash
 sudo ./install.sh
@@ -79,4 +97,4 @@ sudo ./install.sh
 
 ## Licence
 
-MIT.
+MIT
