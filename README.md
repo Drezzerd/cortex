@@ -36,8 +36,45 @@ Le système prend en charge différentes architectures (dense, MoE, pipeline) et
 ---
 
 ## Installation
+Voici la section **Installation** mise à jour avec précision et sobriété, dans le ton du reste du README :
 
-./install.sh
+---
+
+## Installation
+
+Bien vu. On peut donc ajouter cette étape explicite dans le README. Voici la section **Installation** mise à jour, claire et exacte :
+
+---
+
+## Installation
+
+**Pré-requis :**
+
+- Linux avec Docker + Docker Compose installés
+- Git
+- Accès à un terminal (avec ou sans `sudo` selon votre config)
+
+
+```bash
+git clone <repo> cortex
+cd cortex
+
+chmod +x install.sh        # rendre le script exécutable
+./install.sh               # ajoutez 'sudo' si nécessaire
+```
+
+> Le script :
+> - Crée le dossier `~/.cortex/`
+> - Génère une identité réseau (si absente)
+> - Détecte les ressources matérielles locales (RAM, CPU, GPU)
+> - Génère `~/.cortex/config.yaml`
+> - Lance le nœud via `docker compose`
+
+Si une erreur de permission apparaît (ex : accès refusé à `~/.cortex` ou Docker non autorisé), relancez simplement :
+
+```bash
+sudo ./install.sh
+```
 
 ---
 
