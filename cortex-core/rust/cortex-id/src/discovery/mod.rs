@@ -127,7 +127,7 @@ pub async fn run_bootstrap_node(keypair: Keypair) -> Result<()> {
     let cmd_tx_clone = cmd_tx.clone();
     tokio::spawn(async move {
         loop {
-            println!("🔍 Lancement d'une recherche DHT pour les fournisseurs...");
+            println!("Lancement d'une recherche DHT pour les fournisseurs...");
             if let Err(e) = cmd_tx_clone.send(Command::GetProviders).await {
                 println!("Erreur lors de l'envoi de la commande DHT: {:?}", e);
             }
@@ -141,7 +141,7 @@ pub async fn run_bootstrap_node(keypair: Keypair) -> Result<()> {
         loop {
             sleep(Duration::from_secs(10)).await;
             if let Ok(r) = reg_clone.lock() {
-                println!("\n📦 Registry Snapshot:");
+                println!("\nRegistry Snapshot:");
                 println!("{}", r.snapshot_json());
             }
         }
@@ -176,14 +176,69 @@ pub async fn run_bootstrap_node(keypair: Keypair) -> Result<()> {
                         }
                     },
                     SwarmEvent::Behaviour(MeshEvent::Kad(KademliaEvent::RoutingUpdated { peer, .. })) => {
-                        println!("✅ Table de routage mise à jour avec: {}", peer);
+                        println!("Table de routage mise à jour avec: {}", peer);
                     },
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("🔊 En écoute sur: {}", address);
+                        println!("En écoute sur: {}", address);
                     },
                     _ => {}
                 }
             }
+        }
+    }
+}
+
+/// Fonction pour lancer un nœud "léger" qui rejoint le réseau sans la lourdeur d'un bootstrap.
+/// Ici, on effectue une annonce unique puis on se contente d'écouter.
+pub async fn run_light_node(keypair: Keypair) -> Result<()> {
+    let local_peer_id = PeerId::from(keypair.public());
+
+    // Création du transport (utilisation de QUIC)
+    let transport = QuicTransport::new(QuicConfig::new(&keypair))
+        .map(|(peer_id, conn), _| (peer_id, StreamMuxerBox::new(conn)))
+        .boxed();
+
+    // Initialisation de Gossipsub avec la configuration par défaut
+    let gossipsub_config = GossipsubConfig::default();
+    let mut gossipsub = Gossipsub::new(MessageAuthenticity::Signed(keypair.clone()), gossipsub_config)
+        .expect("Erreur lors de la création de Gossipsub");
+    // On définit un topic d'annonce
+    let topic = IdentTopic::new("cortex/announce");
+    gossipsub.subscribe(&topic)?;
+
+    // Démarrage de mDNS pour la découverte locale
+    let mdns = Mdns::new(Default::default(), local_peer_id)?;
+
+    // Mise en place de Kademlia pour la DHT (on n'effectue ici qu'une annonce)
+    let store = MemoryStore::new(local_peer_id);
+    let mut kad = Kademlia::with_config(local_peer_id, store, KademliaConfig::default());
+    let discovery_key = RecordKey::new(CORTEX_SHARED_KEY);
+
+    // On envoie une annonce unique pour être découvert (ou pour apparaître dans la DHT)
+    match kad.start_providing(discovery_key.clone()) {
+        Ok(query_id) => println!("Annonce lancée, QueryId: {:?}", query_id),
+        Err(e) => println!("Erreur lors de l'annonce: {:?}.", e),
+    }
+
+    let behaviour = MeshBehaviour { gossipsub, mdns, kad };
+    let config = SwarmConfig::with_tokio_executor();
+    let mut swarm = Swarm::new(transport, behaviour, local_peer_id, config);
+
+    // On ouvre une écoute sur une adresse (ici, sur tout IP4 en UDP via QUIC)
+    swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
+
+    println!("Noeud léger en écoute, Peer ID: {}", local_peer_id);
+
+    // Boucle principale simple: on traite les événements reçus (sans lancer de requêtes supplémentaires)
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::Behaviour(MeshEvent::Gossipsub(event)) => {
+                println!("Événement Gossipsub reçu : {:?}", event);
+            },
+            SwarmEvent::NewListenAddr { address, .. } => {
+                println!("En écoute sur: {}", address);
+            },
+            _ => {} // D'autres événements peuvent être traités au besoin
         }
     }
 }
