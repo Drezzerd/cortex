@@ -7,6 +7,13 @@ CORTEX_DIR="$USER_HOME/.cortex"
 IDENTITY_FILE="$CORTEX_DIR/identity.key"
 CONFIG_FILE="$CORTEX_DIR/config.yaml"
 
+
+HOSTNAME=$(hostname)
+export HOSTNAME
+
+mkdir -p "$CORTEX_DIR"
+chmod 777 "$CORTEX_DIR"
+
 # Vérifie que Docker est installé
 if ! command -v docker &>/dev/null; then
   echo "❌ Docker n'est pas installé. Installe Docker puis réessaie."
@@ -26,7 +33,7 @@ echo "==> Initialisation du nœud Cortex..."
 if [ ! -f "$IDENTITY_FILE" ]; then
     echo "==> Génération d'une identité..."
     docker compose build cortex-id
-    docker compose run --rm -v "$CORTEX_DIR":/root/.cortex cortex-id
+    docker compose run --rm --user "$(id -u):$(id -g)" -v "$CORTEX_DIR":/home/cortexuser/.cortex cortex-id
 else
     echo "==> Identité déjà présente : $IDENTITY_FILE"
 fi
@@ -49,8 +56,6 @@ if command -v lspci &>/dev/null; then
 else
   HAS_GPU=false  # macOS n’a pas lspci ou GPU Nvidia en général
 fi
-
-HOSTNAME=$(hostname)
 
 # Création du fichier de configuration
 echo "==> Génération de la configuration : $CONFIG_FILE"

@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   cortex-id:
     build:
@@ -13,6 +11,6 @@ services:
     environment:
       NODE_NAME: ${HOSTNAME}
     volumes:
-      - ~/.cortex:/root/.cortex
+      - ~/.cortex:/home/cortexuser/.cortex
     restart: "no"
     tty: true
