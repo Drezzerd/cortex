@@ -2,7 +2,7 @@
 set -e
 
 REAL_USER=${SUDO_USER:-$USER}
-USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+USER_HOME=$(eval echo "~$REAL_USER")
 CORTEX_DIR="$USER_HOME/.cortex"
 IDENTITY_FILE="$CORTEX_DIR/identity.key"
 CONFIG_FILE="$CORTEX_DIR/config.yaml"
