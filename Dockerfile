@@ -7,13 +7,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev
 
 # Pré-copie pour optimiser le cache
-COPY cortex-core/rust/cortex-id/Cargo.toml ./Cargo.toml
+COPY core/Cargo.toml ./Cargo.toml
 
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || true
 RUN rm -rf src
 
 # Copie du code source complet
-COPY cortex-core/rust/cortex-id/ .
+COPY core/ .
 
 # Compilation de l'exécutable
 RUN cargo build --release
