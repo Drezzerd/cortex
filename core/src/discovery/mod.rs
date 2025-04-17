@@ -118,11 +118,11 @@ async fn build_mesh_behaviour(keypair: Keypair, local_peer_id: PeerId) -> Result
     
     // Kademlia pour DHT
     let store = MemoryStore::new(local_peer_id);
-    let kad_config = KademliaConfig::default();
+    let mut kad_cfg = KademliaConfig::default();
     kad_cfg.set_provider_record_ttl(Some(std::time::Duration::from_secs(60)));
 
-    let kademlia = Kademlia::with_config(store, local_peer_id.clone(), kad_cfg);
-    
+    let kad = Kademlia::with_config(local_peer_id.clone(), store, kad_cfg);
+
     Ok(MeshBehaviour { gossipsub, mdns, kad })
 }
 

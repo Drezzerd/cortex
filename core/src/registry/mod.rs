@@ -55,7 +55,7 @@ impl Registry {
 
     /// Supprime les nœuds inactifs depuis plus de `120` secondes
     pub fn prune(&mut self) {
-        self.nodes.retain(|_peer_id, info| info.last_seen_secs_ago <= 120);
+        self.nodes.retain(|_peer_id, info| info.last_seen.elapsed().as_secs() <= 120);
     }
 
     /// Export JSON lisible pour debug ou snapshot
