@@ -3,7 +3,6 @@ use libp2p::{
     gossipsub::{
         Behaviour as Gossipsub,
         ConfigBuilder as GossipsubConfigBuilder,
-        Config as GossipsubConfig,
         Event as GossipsubEvent,
         IdentTopic,
         MessageAuthenticity,
@@ -278,7 +277,7 @@ pub async fn run_light_node(keypair: Keypair) -> Result<()> {
     let transport = create_transport(&keypair);
     
     // Construction du comportement
-    let mut behaviour = build_mesh_behaviour(keypair.clone(), local_peer_id).await?;
+    let behaviour = build_mesh_behaviour(keypair.clone(), local_peer_id).await?;
     
     // Configuration et démarrage du swarm
     let config = SwarmConfig::with_tokio_executor();
