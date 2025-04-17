@@ -20,6 +20,9 @@ tokio-stream = "0.1"
 anyhow = "1"
 chrono = "0.4"
 futures = "0.3"
+log = "0.4"
+env_logger = "0.10"
+warp = "0.3"
 
 [lib]
 name = "cortex_id"

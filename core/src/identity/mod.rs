@@ -4,7 +4,7 @@ use std::fs;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use libp2p::identity::{ed25519, Keypair, PeerId};
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, Context};
+use anyhow::{Result, Context, anyhow};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityInfo {
@@ -12,31 +12,59 @@ pub struct IdentityInfo {
     pub public_key: String,
 }
 
-const KEY_PATH: &str = "/root/.cortex/identity.key";
-const INFO_PATH: &str = "/root/.cortex/identity.json";
+/// Déterminer le chemin du répertoire .cortex en fonction de l'environnement
+pub fn get_cortex_dir() -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".cortex")
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".cortex")
+    } else {
+        // Fallback pour Docker
+        PathBuf::from("/home/cortexuser/.cortex")
+    }
+}
+
+/// Obtenir le chemin du fichier clé
+pub fn get_key_path() -> PathBuf {
+    get_cortex_dir().join("identity.key")
+}
+
+/// Obtenir le chemin du fichier info
+pub fn get_info_path() -> PathBuf {
+    get_cortex_dir().join("identity.json")
+}
 
 /// Génère ou charge un ed25519::Keypair brut
 pub fn load_or_generate_identity() -> Result<ed25519::Keypair> {
-    let path = PathBuf::from(KEY_PATH);
+    let path = get_key_path();
+    println!("Chemin de la clé: {:?}", path);
 
     if path.exists() {
+        println!("Chargement de l'identité existante...");
         let content = fs::read_to_string(&path)?;
         let bytes = STANDARD.decode(content.trim())?;
         return ed25519::Keypair::try_from_bytes(&mut bytes.clone())
-            .map_err(|e| anyhow::anyhow!("Failed to decode keypair: {:?}", e));
+            .map_err(|e| anyhow!("Failed to decode keypair: {:?}", e));
     }
 
+    println!("Génération d'une nouvelle identité...");
     let ed25519_keypair = ed25519::Keypair::generate();
     let encoded = STANDARD.encode(ed25519_keypair.to_bytes());
-    fs::create_dir_all(path.parent().unwrap())?;
+    
+    // Créer le répertoire parent s'il n'existe pas
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
     fs::write(&path, encoded)?;
+    println!("Nouvelle identité sauvegardée dans {:?}", path);
 
     Ok(ed25519_keypair)
 }
 
 /// Retourne un Keypair utilisable par libp2p
 pub fn load_identity_file() -> Result<Keypair> {
-    let path = PathBuf::from(KEY_PATH);
+    let path = get_key_path();
     let content = fs::read_to_string(path)?;
     let bytes = STANDARD.decode(content.trim())?;
     let ed25519 = ed25519::Keypair::try_from_bytes(&mut bytes.clone())?;
@@ -60,10 +88,15 @@ pub fn generate_identity() -> Result<IdentityInfo> {
 
 /// Sauvegarde une version lisible de l'identité
 pub fn save_identity_file(identity: &IdentityInfo) -> Result<()> {
-    let path = PathBuf::from(INFO_PATH);
+    let path = get_info_path();
     let json = serde_json::to_string_pretty(identity)
         .context("Failed to serialize identity info")?;
-    fs::create_dir_all(path.parent().unwrap())?;
+    
+    // Créer le répertoire parent s'il n'existe pas
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
     fs::write(&path, json).context("Failed to write identity file")?;
     Ok(())
 }

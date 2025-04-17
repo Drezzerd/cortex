@@ -9,6 +9,12 @@ use libp2p::identity::Keypair;
 use libp2p::PeerId;
 use serde::{Serialize, Deserialize};
 use anyhow::Result;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::registry::{Registry, AnnounceMsg};
+
+pub type SharedCommunicator = Arc<Mutex<Communicator>>;
 
 /// Message standard pour la communication entre nœuds
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,17 +60,45 @@ impl Communicator {
     
     /// Traite un événement Gossipsub reçu.
     /// À appeler dans la boucle d’événements du Swarm.
-    pub fn handle_event(&self, event: GossipsubEvent) {
+    pub fn handle_event(&mut self, event: GossipsubEvent, registry: Option<Arc<Mutex<Registry>>>) {
         match event {
             GossipsubEvent::Message { message, .. } => {
-                match serde_json::from_slice::<CommunicatorMessage>(&message.data) {
-                    Ok(comm_msg) => {
-                        println!("Message reçu de {} : {}", comm_msg.sender, comm_msg.payload);
+                println!("Message gossipsub reçu de {:?}, taille: {} octets", 
+                        message.source, message.data.len());
+                
+                // Essayer de désérialiser le message comme message du communicator
+                if let Ok(comm_msg) = serde_json::from_slice::<CommunicatorMessage>(&message.data) {
+                    println!("Message reçu de {}: {}", comm_msg.sender, comm_msg.payload);
+                } 
+                // Essayer comme message d'annonce de nœud
+                else if let Ok(announce) = serde_json::from_slice::<AnnounceMsg>(&message.data) {
+                    println!("Annonce de nœud reçue: {}", announce.node_id);
+                    
+                    // Si un registry est disponible, mettre à jour le registry
+                    if let Some(reg) = registry {
+                        let mut reg_lock = match reg.try_lock() {
+                            Ok(lock) => lock,
+                            Err(_) => {
+                                println!("Impossible de verrouiller le registry, annonce ignorée");
+                                return;
+                            }
+                        };
+                        reg_lock.update_from_announce(announce);
+                        println!("Registry mis à jour avec le nœud");
+                    } else {
+                        println!("Pas de registry disponible pour l'annonce");
                     }
-                    Err(e) => eprintln!("Erreur de désérialisation du message: {:?}", e),
+                } else {
+                    println!("Message gossipsub de format inconnu");
                 }
             },
-            _ => {} // Traiter d'autres types d'événements si nécessaire
+            GossipsubEvent::Subscribed { peer_id, topic } => {
+                println!("Nœud {:?} abonné au topic {:?}", peer_id, topic);
+            },
+            GossipsubEvent::Unsubscribed { peer_id, topic } => {
+                println!("Nœud {:?} désabonné du topic {:?}", peer_id, topic);
+            },
+            _ => {} // Autres événements Gossipsub
         }
     }
 }
