@@ -78,7 +78,7 @@ fn parse_bootstrap_addr(addr_str: &str) -> Option<(Multiaddr, PeerId)> {
             // Extraire le PeerId de la multiaddr
             for protocol in addr.iter() {
                 if let Protocol::P2p(multihash) = protocol {
-                    if let Ok(peer_id) = PeerId::from_multihash(multihash) {
+                    if let Ok(peer_id) = PeerId::from_multihash(multihash.into()) {
                         return Some((addr, peer_id));
                     }
                 }
@@ -119,7 +119,9 @@ async fn build_mesh_behaviour(keypair: Keypair, local_peer_id: PeerId) -> Result
     // Kademlia pour DHT
     let store = MemoryStore::new(local_peer_id);
     let kad_config = KademliaConfig::default();
-    let kad = Kademlia::with_config(local_peer_id, store, kad_config);
+    kad_cfg.set_provider_record_ttl(Some(std::time::Duration::from_secs(60)));
+
+    let kademlia = Kademlia::with_config(store, local_peer_id.clone(), kad_cfg);
     
     Ok(MeshBehaviour { gossipsub, mdns, kad })
 }

@@ -53,10 +53,9 @@ impl Registry {
         self.nodes.insert(msg.node_id, entry);
     }
 
-    /// Supprime les nœuds inactifs depuis plus de `ttl` secondes
-    pub fn purge_stale(&mut self, ttl: Duration) {
-        let now = Instant::now();
-        self.nodes.retain(|_, entry| now.duration_since(entry.last_seen) < ttl);
+    /// Supprime les nœuds inactifs depuis plus de `120` secondes
+    pub fn prune(&mut self) {
+        self.nodes.retain(|_peer_id, info| info.last_seen_secs_ago <= 120);
     }
 
     /// Export JSON lisible pour debug ou snapshot
